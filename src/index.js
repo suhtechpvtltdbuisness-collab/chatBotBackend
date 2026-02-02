@@ -100,13 +100,12 @@ app.get("/health", (req, res) => {
 });
 
 // Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/tenant", tenantRoutes);
-app.use("/api/keys", apiKeyRoutes);
-app.use("/api/kb", kbRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/webhook", webhookRoutes);
-
+app.use("/auth", authRoutes);
+app.use("/tenant", tenantRoutes);
+app.use("/keys", apiKeyRoutes);
+app.use("/kb", kbRoutes);
+app.use("/chat", chatRoutes);
+app.use("/webhook", webhookRoutes);
 // Socket.IO for real-time features (disabled in serverless)
 if (!process.env.VERCEL) {
   io.on("connection", (socket) => {
