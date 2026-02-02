@@ -1,7 +1,21 @@
 import mongoose from "mongoose";
 import { config } from "./env.js";
 
+let isConnecting = false;
+let isConnected = false;
+
 export const connectDB = async () => {
+  // Prevent multiple simultaneous connection attempts
+  if (isConnected) {
+    console.log("✅ Using existing MongoDB connection");
+    return;
+  }
+
+  if (isConnecting) {
+    console.log("⏳ MongoDB connection in progress...");
+    return;
+  }
+
   try {
     if (!config.mongodb.uri) {
       console.warn(
@@ -9,15 +23,27 @@ export const connectDB = async () => {
       );
       return;
     }
+
+    isConnecting = true;
+
     const conn = await mongoose.connect(config.mongodb.uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000,
+      maxPoolSize: 10,
     });
 
+    isConnected = true;
+    isConnecting = false;
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
   } catch (error) {
-    console.error("❌ MongoDB connection error:", error);
-    process.exit(1);
+    isConnecting = false;
+    console.error("❌ MongoDB connection error:", error.message);
+    // In serverless, don't exit - let the request fail gracefully
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
+    throw error;
   }
 };
 

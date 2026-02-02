@@ -69,18 +69,20 @@ app.options("*", (req, res) => {
   res.sendStatus(200);
 });
 
+// Root route - must come before other routes
+app.get("/", (req, res) =>
+  res.json({ message: "Welcome to SuhTech AI ChatBot Backend!" }),
+);
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV,
+    environment: process.env.NODE_ENV || "production",
     version: "1.0.0",
   });
 });
-app.use("/", (req, res) =>
-  res.json({ message: "Welcome to SuhTech AI ChatBot Backend!" }),
-);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -90,74 +92,83 @@ app.use("/api/kb", kbRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/webhook", webhookRoutes);
 
-// Socket.IO for real-time features
-io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
+// Socket.IO for real-time features (only in non-serverless mode)
+if (!process.env.VERCEL) {
+  io.on("connection", (socket) => {
+    console.log("Client connected:", socket.id);
 
-  socket.on("join-tenant", (tenantId) => {
-    socket.join(`tenant-${tenantId}`);
-    console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
-  });
-
-  socket.on("agent-online", (data) => {
-    socket.join(`agent-${data.agentId}`);
-    socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
-      agentId: data.agentId,
-      status: "online",
+    socket.on("join-tenant", (tenantId) => {
+      socket.join(`tenant-${tenantId}`);
+      console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
     });
-    console.log(`Agent ${data.agentId} is online`);
-    // Track online agent for auto-assign and process queued handoffs
-    try {
-      handoffService.setAgentOnline(data.tenantId, data.agentId);
-      setImmediate(() => handoffService.processQueue());
-    } catch (e) {
-      console.error("Failed to mark agent online:", e.message);
-    }
-  });
 
-  socket.on("agent-offline", (data) => {
-    socket.leave(`agent-${data.agentId}`);
-    socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
-      agentId: data.agentId,
-      status: "offline",
+    socket.on("agent-online", (data) => {
+      socket.join(`agent-${data.agentId}`);
+      socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
+        agentId: data.agentId,
+        status: "online",
+      });
+      console.log(`Agent ${data.agentId} is online`);
+      // Track online agent for auto-assign and process queued handoffs
+      try {
+        handoffService.setAgentOnline(data.tenantId, data.agentId);
+        setImmediate(() => handoffService.processQueue());
+      } catch (e) {
+        console.error("Failed to mark agent online:", e.message);
+      }
     });
-    console.log(`Agent ${data.agentId} is offline`);
-    try {
-      handoffService.setAgentOffline(data.tenantId, data.agentId);
-    } catch (e) {
-      console.error("Failed to mark agent offline:", e.message);
-    }
+
+    socket.on("agent-offline", (data) => {
+      socket.leave(`agent-${data.agentId}`);
+      socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
+        agentId: data.agentId,
+        status: "offline",
+      });
+      console.log(`Agent ${data.agentId} is offline`);
+      try {
+        handoffService.setAgentOffline(data.tenantId, data.agentId);
+      } catch (e) {
+        console.error("Failed to mark agent offline:", e.message);
+      }
+    });
+
+    socket.on("join-conversation", (conversationId) => {
+      socket.join(`conversation-${conversationId}`);
+      console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
+    });
+
+    socket.on("leave-conversation", (conversationId) => {
+      socket.leave(`conversation-${conversationId}`);
+      console.log(`Socket ${socket.id} left conversation ${conversationId}`);
+    });
+
+    socket.on("chat-message", (data) => {
+      socket
+        .to(`conversation-${data.conversationId}`)
+        .emit("new-message", data);
+    });
+
+    socket.on("handoff-notification", (data) => {
+      // Broadcast handoff notifications to all agents in the tenant
+      socket.to(`tenant-${data.tenantId}`).emit("new-handoff", data);
+      console.log(
+        `Handoff notification sent to tenant ${data.tenantId}:`,
+        data,
+      );
+    });
+
+    socket.on("disconnect", () => {
+      console.log("Client disconnected:", socket.id);
+    });
   });
 
-  socket.on("join-conversation", (conversationId) => {
-    socket.join(`conversation-${conversationId}`);
-    console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
-  });
-
-  socket.on("leave-conversation", (conversationId) => {
-    socket.leave(`conversation-${conversationId}`);
-    console.log(`Socket ${socket.id} left conversation ${conversationId}`);
-  });
-
-  socket.on("chat-message", (data) => {
-    socket.to(`conversation-${data.conversationId}`).emit("new-message", data);
-  });
-
-  socket.on("handoff-notification", (data) => {
-    // Broadcast handoff notifications to all agents in the tenant
-    socket.to(`tenant-${data.tenantId}`).emit("new-handoff", data);
-    console.log(`Handoff notification sent to tenant ${data.tenantId}:`, data);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
-  });
-});
-
-// Make io available to routes
-app.set("io", io);
-// Inject io into services that need it
-handoffService.setSocketIO(io);
+  // Make io available to routes
+  app.set("io", io);
+  // Inject io into services that need it
+  handoffService.setSocketIO(io);
+} else {
+  console.log("⚠️ Socket.IO disabled in serverless mode");
+}
 
 // Error handling
 app.use(errorHandler);
@@ -170,7 +181,7 @@ app.use("*", (req, res) => {
   });
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // In Vercel serverless environment, Vercel provides the listener; skip .listen()
 if (!process.env.VERCEL) {
@@ -179,6 +190,9 @@ if (!process.env.VERCEL) {
     console.log(`📊 Environment: ${process.env.NODE_ENV}`);
     console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
   });
+} else {
+  console.log(`🚀 Serverless function ready`);
 }
 
+// Export for Vercel serverless
 export default app;
