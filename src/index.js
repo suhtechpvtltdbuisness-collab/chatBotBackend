@@ -41,18 +41,8 @@ const io = new Server(server, {
   },
 });
 
-// Initialize MongoDB connection (async, but don't block startup in serverless)
-if (process.env.VERCEL) {
-  // In serverless, connect on-demand during first request
-  connectDB().catch((err) => {
-    console.error("Initial MongoDB connection failed:", err.message);
-  });
-} else {
-  // In local dev, wait for connection
-  connectDB().catch((err) => {
-    console.error("MongoDB connection failed:", err.message);
-  });
-}
+// Connect to MongoDB
+connectDB();
 
 // Security middleware
 app.use(helmet());
@@ -63,22 +53,6 @@ app.use(compression());
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Middleware to ensure DB connection in serverless
-if (process.env.VERCEL) {
-  app.use(async (req, res, next) => {
-    try {
-      await connectDB();
-      next();
-    } catch (error) {
-      console.error("DB connection middleware error:", error.message);
-      res.status(503).json({
-        error: "Service temporarily unavailable",
-        message: "Database connection failed",
-      });
-    }
-  });
-}
 
 // Rate limiting - DISABLED for testing
 // app.use(globalRateLimit);
@@ -118,15 +92,14 @@ app.use("/api/kb", kbRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/webhook", webhookRoutes);
 
-// Socket.IO for real-time features (only in non-serverless mode)
-if (!process.env.VERCEL) {
-  io.on("connection", (socket) => {
-    console.log("Client connected:", socket.id);
+// Socket.IO for real-time features
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
 
-    socket.on("join-tenant", (tenantId) => {
-      socket.join(`tenant-${tenantId}`);
-      console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
-    });
+  socket.on("join-tenant", (tenantId) => {
+    socket.join(`tenant-${tenantId}`);
+    console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
+  });
 
     socket.on("agent-online", (data) => {
       socket.join(`agent-${data.agentId}`);
@@ -184,17 +157,14 @@ if (!process.env.VERCEL) {
     });
 
     socket.on("disconnect", () => {
-      console.log("Client disconnected:", socket.id);
-    });
+    console.log("Client disconnected:", socket.id);
   });
+});
 
-  // Make io available to routes
-  app.set("io", io);
-  // Inject io into services that need it
-  handoffService.setSocketIO(io);
-} else {
-  console.log("⚠️ Socket.IO disabled in serverless mode");
-}
+// Make io available to routes
+app.set("io", io);
+// Inject io into services that need it
+handoffService.setSocketIO(io);
 
 // Global error handlers to prevent crashes
 process.on("unhandledRejection", (reason, promise) => {
@@ -203,10 +173,7 @@ process.on("unhandledRejection", (reason, promise) => {
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught Exception:", error);
-  // In serverless, log but don't exit
-  if (!process.env.VERCEL) {
-    process.exit(1);
-  }
+  process.exit(1);
 });
 
 // Error handling
@@ -222,17 +189,8 @@ app.use("*", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-// In Vercel serverless environment, Vercel provides the listener; skip .listen()
-if (!process.env.VERCEL) {
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-    console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL}`);
-  });
-} else {
-  console.log(`🚀 Serverless function ready`);
-}
-
-// Export for Vercel serverless
-// Vercel expects a handler that returns the Express app
-export default app;
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'not set'}`);
+});

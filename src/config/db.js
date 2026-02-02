@@ -27,8 +27,6 @@ export const connectDB = async () => {
     isConnecting = true;
 
     const conn = await mongoose.connect(config.mongodb.uri, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
       maxPoolSize: 10,
     });
@@ -40,12 +38,7 @@ export const connectDB = async () => {
     isConnecting = false;
     isConnected = false;
     console.error("❌ MongoDB connection error:", error.message);
-    // In serverless, don't exit or throw - log and continue
-    if (!process.env.VERCEL) {
-      process.exit(1);
-    }
-    // Don't throw in serverless - just log and allow retry on next request
-    console.warn("⚠️ MongoDB connection will be retried on next request");
+    process.exit(1);
   }
 };
 
