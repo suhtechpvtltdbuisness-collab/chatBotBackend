@@ -41,8 +41,18 @@ const io = new Server(server, {
   },
 });
 
-// Connect to MongoDB
-connectDB();
+// Initialize MongoDB connection (async, but don't block startup in serverless)
+if (process.env.VERCEL) {
+  // In serverless, connect on-demand during first request
+  connectDB().catch((err) => {
+    console.error("Initial MongoDB connection failed:", err.message);
+  });
+} else {
+  // In local dev, wait for connection
+  connectDB().catch((err) => {
+    console.error("MongoDB connection failed:", err.message);
+  });
+}
 
 // Security middleware
 app.use(helmet());
@@ -53,6 +63,22 @@ app.use(compression());
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Middleware to ensure DB connection in serverless
+if (process.env.VERCEL) {
+  app.use(async (req, res, next) => {
+    try {
+      await connectDB();
+      next();
+    } catch (error) {
+      console.error("DB connection middleware error:", error.message);
+      res.status(503).json({
+        error: "Service temporarily unavailable",
+        message: "Database connection failed",
+      });
+    }
+  });
+}
 
 // Rate limiting - DISABLED for testing
 // app.use(globalRateLimit);
@@ -170,6 +196,19 @@ if (!process.env.VERCEL) {
   console.log("⚠️ Socket.IO disabled in serverless mode");
 }
 
+// Global error handlers to prevent crashes
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  // In serverless, log but don't exit
+  if (!process.env.VERCEL) {
+    process.exit(1);
+  }
+});
+
 // Error handling
 app.use(errorHandler);
 
@@ -195,4 +234,5 @@ if (!process.env.VERCEL) {
 }
 
 // Export for Vercel serverless
+// Vercel expects a handler that returns the Express app
 export default app;

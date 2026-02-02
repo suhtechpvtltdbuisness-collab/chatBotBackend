@@ -38,12 +38,14 @@ export const connectDB = async () => {
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
   } catch (error) {
     isConnecting = false;
+    isConnected = false;
     console.error("❌ MongoDB connection error:", error.message);
-    // In serverless, don't exit - let the request fail gracefully
+    // In serverless, don't exit or throw - log and continue
     if (!process.env.VERCEL) {
       process.exit(1);
     }
-    throw error;
+    // Don't throw in serverless - just log and allow retry on next request
+    console.warn("⚠️ MongoDB connection will be retried on next request");
   }
 };
 
