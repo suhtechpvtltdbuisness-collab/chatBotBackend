@@ -38,7 +38,11 @@ export const connectDB = async () => {
     isConnecting = false;
     isConnected = false;
     console.error("❌ MongoDB connection error:", error.message);
-    process.exit(1);
+
+    // In serverless, don't exit - just log and allow retry
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
   }
 };
 
