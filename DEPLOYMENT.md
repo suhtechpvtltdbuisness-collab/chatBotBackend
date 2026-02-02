@@ -5,6 +5,7 @@ This is a standard Node.js/Express application with Socket.IO support. It can be
 ## ✅ What Changed
 
 Removed all Vercel-specific configurations and converted to a standard Express server:
+
 - Removed `vercel.json`
 - Removed all `process.env.VERCEL` conditionals
 - Socket.IO is now always enabled
@@ -14,6 +15,7 @@ Removed all Vercel-specific configurations and converted to a standard Express s
 ## 🚀 Recommended Deployment Options
 
 ### 1. **Railway** (Recommended - Easy & Free Tier)
+
 ```bash
 # Install Railway CLI
 npm i -g @railway/cli
@@ -25,12 +27,14 @@ railway up
 ```
 
 Set environment variables in Railway dashboard:
+
 - `MONGO_URI`
 - `JWT_SECRET`
 - `PORT` (optional, defaults to 3000)
 - `NODE_ENV=production`
 
 ### 2. **Render**
+
 1. Connect your GitHub repo
 2. Select "Web Service"
 3. Build Command: `npm install`
@@ -38,12 +42,14 @@ Set environment variables in Railway dashboard:
 5. Add environment variables in dashboard
 
 ### 3. **DigitalOcean App Platform**
+
 1. Connect GitHub repo
 2. Auto-detects Node.js
 3. Add environment variables
 4. Deploy
 
 ### 4. **Heroku**
+
 ```bash
 heroku create your-app-name
 heroku config:set MONGO_URI="your-mongo-uri"
@@ -52,6 +58,7 @@ git push heroku main
 ```
 
 ### 5. **AWS EC2 / VPS**
+
 ```bash
 # On server
 git clone <your-repo>
@@ -66,6 +73,7 @@ pm2 startup
 ```
 
 ### 6. **Docker**
+
 ```dockerfile
 FROM node:18-alpine
 WORKDIR /app
@@ -87,11 +95,13 @@ CMD ["npm", "start"]
 ## 🔍 Health Check Endpoint
 
 Once deployed, verify your app is running:
+
 ```
 GET https://your-domain.com/api/health
 ```
 
 Should return:
+
 ```json
 {
   "status": "healthy",
@@ -110,7 +120,7 @@ Should return:
 ✅ Helmet security headers  
 ✅ Compression middleware  
 ✅ Error handling middleware  
-✅ Global error handlers for uncaught exceptions  
+✅ Global error handlers for uncaught exceptions
 
 ## 🛠️ Local Development
 

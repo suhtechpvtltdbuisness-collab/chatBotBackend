@@ -75,7 +75,7 @@ app.get("/", (req, res) =>
 );
 
 // Health check
-app.get("/api/health", (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
     status: "healthy",
     timestamp: new Date().toISOString(),
@@ -101,62 +101,57 @@ io.on("connection", (socket) => {
     console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
   });
 
-    socket.on("agent-online", (data) => {
-      socket.join(`agent-${data.agentId}`);
-      socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
-        agentId: data.agentId,
-        status: "online",
-      });
-      console.log(`Agent ${data.agentId} is online`);
-      // Track online agent for auto-assign and process queued handoffs
-      try {
-        handoffService.setAgentOnline(data.tenantId, data.agentId);
-        setImmediate(() => handoffService.processQueue());
-      } catch (e) {
-        console.error("Failed to mark agent online:", e.message);
-      }
+  socket.on("agent-online", (data) => {
+    socket.join(`agent-${data.agentId}`);
+    socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
+      agentId: data.agentId,
+      status: "online",
     });
+    console.log(`Agent ${data.agentId} is online`);
+    // Track online agent for auto-assign and process queued handoffs
+    try {
+      handoffService.setAgentOnline(data.tenantId, data.agentId);
+      setImmediate(() => handoffService.processQueue());
+    } catch (e) {
+      console.error("Failed to mark agent online:", e.message);
+    }
+  });
 
-    socket.on("agent-offline", (data) => {
-      socket.leave(`agent-${data.agentId}`);
-      socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
-        agentId: data.agentId,
-        status: "offline",
-      });
-      console.log(`Agent ${data.agentId} is offline`);
-      try {
-        handoffService.setAgentOffline(data.tenantId, data.agentId);
-      } catch (e) {
-        console.error("Failed to mark agent offline:", e.message);
-      }
+  socket.on("agent-offline", (data) => {
+    socket.leave(`agent-${data.agentId}`);
+    socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
+      agentId: data.agentId,
+      status: "offline",
     });
+    console.log(`Agent ${data.agentId} is offline`);
+    try {
+      handoffService.setAgentOffline(data.tenantId, data.agentId);
+    } catch (e) {
+      console.error("Failed to mark agent offline:", e.message);
+    }
+  });
 
-    socket.on("join-conversation", (conversationId) => {
-      socket.join(`conversation-${conversationId}`);
-      console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
-    });
+  socket.on("join-conversation", (conversationId) => {
+    socket.join(`conversation-${conversationId}`);
+    console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
+  });
 
-    socket.on("leave-conversation", (conversationId) => {
-      socket.leave(`conversation-${conversationId}`);
-      console.log(`Socket ${socket.id} left conversation ${conversationId}`);
-    });
+  socket.on("leave-conversation", (conversationId) => {
+    socket.leave(`conversation-${conversationId}`);
+    console.log(`Socket ${socket.id} left conversation ${conversationId}`);
+  });
 
-    socket.on("chat-message", (data) => {
-      socket
-        .to(`conversation-${data.conversationId}`)
-        .emit("new-message", data);
-    });
+  socket.on("chat-message", (data) => {
+    socket.to(`conversation-${data.conversationId}`).emit("new-message", data);
+  });
 
-    socket.on("handoff-notification", (data) => {
-      // Broadcast handoff notifications to all agents in the tenant
-      socket.to(`tenant-${data.tenantId}`).emit("new-handoff", data);
-      console.log(
-        `Handoff notification sent to tenant ${data.tenantId}:`,
-        data,
-      );
-    });
+  socket.on("handoff-notification", (data) => {
+    // Broadcast handoff notifications to all agents in the tenant
+    socket.to(`tenant-${data.tenantId}`).emit("new-handoff", data);
+    console.log(`Handoff notification sent to tenant ${data.tenantId}:`, data);
+  });
 
-    socket.on("disconnect", () => {
+  socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);
   });
 });
@@ -191,6 +186,6 @@ const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'not set'}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || "not set"}`);
 });
