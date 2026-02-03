@@ -23,21 +23,31 @@ loadEnv();
 const app = express();
 const server = createServer(app);
 
-// CORS configuration - Allow all origins
+// CORS configuration - Allow all origins with credentials
 app.use(
   cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+    origin: true, // Reflects the request origin
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-API-Key",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    exposedHeaders: ["Content-Range", "X-Content-Range"],
+    maxAge: 86400, // 24 hours
   }),
 );
 
-// Socket.IO config - Allow all origins
+// Socket.IO config - Allow all origins with credentials
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: true,
     methods: ["GET", "POST"],
-    credentials: false,
+    credentials: true,
   },
 });
 
@@ -72,16 +82,17 @@ if (process.env.VERCEL) {
 // Rate limiting - DISABLED for testing
 // app.use(globalRateLimit);
 
-// Handle preflight requests - Allow all origins
+// Handle preflight requests - Reflect request origin
 app.options("*", (req, res) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
   res.header(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, X-API-Key, Origin, X-Requested-With, Accept",
   );
-  res.header("Access-Control-Allow-Credentials", "false");
-  res.sendStatus(200);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Max-Age", "86400");
+  res.sendStatus(204);
 });
 
 // Root route - must come before other routes
