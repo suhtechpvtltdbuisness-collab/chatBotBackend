@@ -23,29 +23,51 @@ loadEnv();
 const app = express();
 const server = createServer(app);
 
-// CORS configuration - Allow all origins with credentials
-app.use(
-  cors({
-    origin: true, // Reflects the request origin
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "X-API-Key",
-      "X-Requested-With",
-      "Accept",
-      "Origin",
-    ],
-    exposedHeaders: ["Content-Range", "X-Content-Range"],
-    maxAge: 86400, // 24 hours
-  }),
-);
+// CORS whitelist - whitelist production frontend and localhost for development
+const corsWhitelist = [
+  "https://chat-bot-frontend-theta-jade.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  process.env.FRONTEND_URL, // Add from environment if provided
+].filter(Boolean); // Remove undefined values
 
-// Socket.IO config - Allow all origins with credentials
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or server requests)
+    if (!origin || corsWhitelist.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS request from unauthorized origin: ${origin}`);
+      callback(new Error("CORS policy: Unauthorized origin"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-API-Key",
+    "X-Requested-With",
+    "Accept",
+    "Origin",
+  ],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  maxAge: 86400, // 24 hours
+};
+
+// CORS configuration
+app.use(cors(corsOptions));
+
+// Socket.IO config - whitelist origins
 const io = new Server(server, {
   cors: {
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || corsWhitelist.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS policy: Unauthorized origin"));
+      }
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -59,8 +81,6 @@ if (!process.env.VERCEL) {
 // Security middleware
 app.use(helmet());
 app.use(compression());
-
-// CORS configuration
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
@@ -82,18 +102,8 @@ if (process.env.VERCEL) {
 // Rate limiting - DISABLED for testing
 // app.use(globalRateLimit);
 
-// Handle preflight requests - Reflect request origin
-app.options("*", (req, res) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-API-Key, Origin, X-Requested-With, Accept",
-  );
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Max-Age", "86400");
-  res.sendStatus(204);
-});
+// Handle preflight requests - use CORS whitelist
+app.options("*", cors(corsOptions));
 
 // Root route - must come before other routes
 app.get("/", (req, res) =>
