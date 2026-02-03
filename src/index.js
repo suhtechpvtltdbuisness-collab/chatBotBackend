@@ -25,6 +25,8 @@ const server = createServer(app);
 
 // CORS whitelist - whitelist production frontend and localhost for development
 const corsWhitelist = [
+  "https://suhtech.shop",
+  "https://www.suhtech.shop",
   "https://chat-bot-frontend-theta-jade.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
