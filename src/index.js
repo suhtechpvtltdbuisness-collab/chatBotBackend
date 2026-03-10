@@ -4,11 +4,11 @@ import express from "express";
 import helmet from "helmet";
 import { createServer } from "http";
 import { Server } from "socket.io";
+
 import { connectDB } from "./config/db.js";
 import { loadEnv } from "./config/env.js";
 import { errorHandler } from "./utils/error.js";
 
-// Route imports
 import apiKeyRoutes from "./routes/apiKeyRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
@@ -17,34 +17,45 @@ import tenantRoutes from "./routes/tenantRoutes.js";
 import webhookRoutes from "./routes/webhookRoutes.js";
 import handoffService from "./services/handoff.js";
 
-// Load environment variables
 loadEnv();
 
 const app = express();
 const server = createServer(app);
 
-// CORS whitelist - whitelist production frontend and localhost for development
-const corsWhitelist = [
+// ===============================
+// CORS CONFIGURATION
+// ===============================
+
+const allowedOrigins = [
   "https://suhtech.shop",
   "https://www.suhtech.shop",
   "https://chat-bot-frontend-theta-jade.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
-  process.env.FRONTEND_URL, // Add from environment if provided
-].filter(Boolean); // Remove undefined values
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or server requests)
-    if (!origin || corsWhitelist.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS request from unauthorized origin: ${origin}`);
-      callback(new Error("CORS policy: Unauthorized origin"));
+    // Allow server-to-server requests
+    if (!origin) return callback(null, true);
+
+    // Allow exact matches
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
+
+    // Allow all Vercel preview deployments
+    if (origin.endsWith(".vercel.app")) {
+      return callback(null, true);
+    }
+
+    console.warn("Blocked CORS origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
+
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
     "Content-Type",
     "Authorization",
@@ -53,42 +64,55 @@ const corsOptions = {
     "Accept",
     "Origin",
   ],
-  exposedHeaders: ["Content-Range", "X-Content-Range"],
-  maxAge: 86400, // 24 hours
 };
 
-// CORS configuration
+// Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
-// Socket.IO config - whitelist origins
+// ===============================
+// SECURITY + PERFORMANCE
+// ===============================
+
+app.use(helmet());
+app.use(compression());
+
+// ===============================
+// BODY PARSER
+// ===============================
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// ===============================
+// SOCKET.IO CONFIG
+// ===============================
+
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin || corsWhitelist.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS policy: Unauthorized origin"));
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+        return callback(null, true);
       }
+
+      return callback(new Error("CORS blocked"));
     },
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
-// Connect to MongoDB - only in non-serverless mode
+// ===============================
+// DATABASE CONNECTION
+// ===============================
+
 if (!process.env.VERCEL) {
   connectDB();
 }
 
-// Security middleware
-app.use(helmet());
-app.use(compression());
-
-// Body parsing middleware
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Ensure DB connection in serverless environment
+// Serverless DB connect
 if (process.env.VERCEL) {
   app.use(async (req, res, next) => {
     try {
@@ -96,23 +120,19 @@ if (process.env.VERCEL) {
       next();
     } catch (error) {
       console.error("DB connection error:", error.message);
-      next(); // Continue anyway for health checks
+      next();
     }
   });
 }
 
-// Rate limiting - DISABLED for testing
-// app.use(globalRateLimit);
+// ===============================
+// ROOT ROUTES
+// ===============================
 
-// Handle preflight requests - use CORS whitelist
-app.options("*", cors(corsOptions));
-
-// Root route - must come before other routes
 app.get("/", (req, res) =>
   res.json({ message: "Welcome to SuhTech AI ChatBot Backend!" }),
 );
 
-// Health check
 app.get("/health", (req, res) => {
   res.json({
     status: "healthy",
@@ -122,31 +142,37 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Routes
+// ===============================
+// API ROUTES
+// ===============================
+
 app.use("/auth", authRoutes);
 app.use("/tenant", tenantRoutes);
 app.use("/keys", apiKeyRoutes);
 app.use("/kb", kbRoutes);
 app.use("/chat", chatRoutes);
 app.use("/webhook", webhookRoutes);
-// Socket.IO for real-time features (disabled in serverless)
+
+// ===============================
+// SOCKET EVENTS
+// ===============================
+
 if (!process.env.VERCEL) {
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
 
     socket.on("join-tenant", (tenantId) => {
       socket.join(`tenant-${tenantId}`);
-      console.log(`Socket ${socket.id} joined tenant ${tenantId}`);
     });
 
     socket.on("agent-online", (data) => {
       socket.join(`agent-${data.agentId}`);
+
       socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
         agentId: data.agentId,
         status: "online",
       });
-      console.log(`Agent ${data.agentId} is online`);
-      // Track online agent for auto-assign and process queued handoffs
+
       try {
         handoffService.setAgentOnline(data.tenantId, data.agentId);
         setImmediate(() => handoffService.processQueue());
@@ -157,11 +183,12 @@ if (!process.env.VERCEL) {
 
     socket.on("agent-offline", (data) => {
       socket.leave(`agent-${data.agentId}`);
+
       socket.to(`tenant-${data.tenantId}`).emit("agent-status", {
         agentId: data.agentId,
         status: "offline",
       });
-      console.log(`Agent ${data.agentId} is offline`);
+
       try {
         handoffService.setAgentOffline(data.tenantId, data.agentId);
       } catch (e) {
@@ -171,12 +198,10 @@ if (!process.env.VERCEL) {
 
     socket.on("join-conversation", (conversationId) => {
       socket.join(`conversation-${conversationId}`);
-      console.log(`Socket ${socket.id} joined conversation ${conversationId}`);
     });
 
     socket.on("leave-conversation", (conversationId) => {
       socket.leave(`conversation-${conversationId}`);
-      console.log(`Socket ${socket.id} left conversation ${conversationId}`);
     });
 
     socket.on("chat-message", (data) => {
@@ -186,12 +211,7 @@ if (!process.env.VERCEL) {
     });
 
     socket.on("handoff-notification", (data) => {
-      // Broadcast handoff notifications to all agents in the tenant
       socket.to(`tenant-${data.tenantId}`).emit("new-handoff", data);
-      console.log(
-        `Handoff notification sent to tenant ${data.tenantId}:`,
-        data,
-      );
     });
 
     socket.on("disconnect", () => {
@@ -199,15 +219,16 @@ if (!process.env.VERCEL) {
     });
   });
 
-  // Make io available to routes
   app.set("io", io);
-  // Inject io into services that need it
   handoffService.setSocketIO(io);
 }
 
-// Global error handlers to prevent crashes
+// ===============================
+// GLOBAL ERROR HANDLERS
+// ===============================
+
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  console.error("Unhandled Rejection:", reason);
 });
 
 process.on("uncaughtException", (error) => {
@@ -215,10 +236,16 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-// Error handling
+// ===============================
+// ERROR HANDLER
+// ===============================
+
 app.use(errorHandler);
 
-// 404 handler
+// ===============================
+// 404 ROUTE
+// ===============================
+
 app.use("*", (req, res) => {
   res.status(404).json({
     error: "Route not found",
@@ -226,9 +253,12 @@ app.use("*", (req, res) => {
   });
 });
 
+// ===============================
+// SERVER START
+// ===============================
+
 const PORT = process.env.PORT || 3000;
 
-// Only start server in non-serverless mode
 if (!process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
@@ -237,5 +267,4 @@ if (!process.env.VERCEL) {
   });
 }
 
-// Export for Vercel serverless
 export default app;
