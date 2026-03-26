@@ -32,28 +32,30 @@ const allowedOrigins = [
   "https://chat-bot-frontend-theta-jade.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:5173",
   process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 ].filter(Boolean);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (origin.endsWith(".vercel.app")) return true;
+  return false;
+};
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow server-to-server requests
-    if (!origin) return callback(null, true);
-
-    // Allow exact matches
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // Allow all Vercel preview deployments
-    if (origin.endsWith(".vercel.app")) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
 
     console.warn("Blocked CORS origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
-
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
@@ -66,7 +68,6 @@ const corsOptions = {
   ],
 };
 
-// Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
@@ -91,9 +92,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
 

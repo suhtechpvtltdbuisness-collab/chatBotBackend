@@ -1,10 +1,22 @@
-import { config } from '../config/env.js';
+import { config } from "../config/env.js";
 
 class LLMProvider {
   constructor() {
-    this.apiKey = config.llm.apiKey;
+    this.apiKey = (config.llm.apiKey || "").trim();
     this.baseUrl = config.llm.baseUrl;
     this.defaultModel = config.llm.model;
+    this.allowStubFallback = Boolean(config.llm.allowStubFallback);
+  }
+
+  buildStubResponse(messages, model = this.defaultModel) {
+    return {
+      content:
+        "[stubbed LLM response] " +
+        (messages[messages.length - 1]?.content || ""),
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      model,
+      finishReason: "stop",
+    };
   }
 
   async generateResponse(messages, options = {}) {
@@ -13,7 +25,7 @@ class LLMProvider {
         model = this.defaultModel,
         temperature = 0.7,
         maxTokens = 500,
-        systemPrompt = null
+        systemPrompt = null,
       } = options;
 
       // Prepare messages array
@@ -21,41 +33,54 @@ class LLMProvider {
 
       if (systemPrompt) {
         formattedMessages.push({
-          role: 'system',
-          content: systemPrompt
+          role: "system",
+          content: systemPrompt,
         });
       }
 
       // Add conversation history
       formattedMessages.push(...messages);
 
-      // If no API key or fetch unavailable (older Node), return a stub response
-      if (!this.apiKey || typeof fetch !== 'function') {
-        return {
-          content: '[stubbed LLM response] ' + (messages[messages.length - 1]?.content || ''),
-          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-          model,
-          finishReason: 'stop'
-        };
+      if (typeof fetch !== "function") {
+        throw new Error(
+          "Global fetch is unavailable in this runtime. Use Node.js 18+ to call the LLM API.",
+        );
+      }
+
+      if (!this.apiKey) {
+        if (this.allowStubFallback) {
+          console.warn(
+            "LLM API key missing. Returning stubbed response because ALLOW_LLM_STUB_FALLBACK=true.",
+          );
+          return this.buildStubResponse(messages, model);
+        }
+        throw new Error(
+          "Missing LLM API key. Set SAMBANOVA_API_KEY (or LLM_API_KEY) in your environment.",
+        );
       }
 
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           model,
           messages: formattedMessages,
           temperature,
           max_tokens: maxTokens,
-          stream: false
-        })
+          stream: false,
+        }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 401) {
+          throw new Error(
+            `LLM authentication failed (401). Verify SAMBANOVA_API_KEY and LLM_BASE_URL. Provider said: ${errorText}`,
+          );
+        }
         throw new Error(`LLM API error: ${response.status} - ${errorText}`);
       }
 
@@ -65,16 +90,18 @@ class LLMProvider {
         content: data.choices[0].message.content,
         usage: data.usage,
         model: data.model,
-        finishReason: data.choices[0].finish_reason
+        finishReason: data.choices[0].finish_reason,
       };
     } catch (error) {
-      console.warn('LLM Provider error, falling back to stub:', error.message);
-      return {
-        content: '[stubbed LLM response] ' + (messages[messages.length - 1]?.content || ''),
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        model: this.defaultModel,
-        finishReason: 'stop'
-      };
+      if (this.allowStubFallback) {
+        console.warn(
+          "LLM Provider error, falling back to stub:",
+          error.message,
+        );
+        return this.buildStubResponse(messages);
+      }
+
+      throw error;
     }
   }
 
@@ -83,13 +110,13 @@ class LLMProvider {
       // For now, return a simple hash-based embedding
       // In production, use a proper embedding model
       const hash = this.simpleHash(text);
-      const embedding = new Array(384).fill(0).map((_, i) =>
-        Math.sin(hash + i) * 0.1
-      );
+      const embedding = new Array(384)
+        .fill(0)
+        .map((_, i) => Math.sin(hash + i) * 0.1);
 
       return embedding;
     } catch (error) {
-      console.error('Embedding generation error:', error);
+      console.error("Embedding generation error:", error);
       throw new Error(`Failed to generate embedding: ${error.message}`);
     }
   }
@@ -98,7 +125,7 @@ class LLMProvider {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return hash;
@@ -106,19 +133,20 @@ class LLMProvider {
 
   async testConnection() {
     try {
-      const response = await this.generateResponse([
-        { role: 'user', content: 'Hello, this is a test message.' }
-      ], { maxTokens: 50 });
+      const response = await this.generateResponse(
+        [{ role: "user", content: "Hello, this is a test message." }],
+        { maxTokens: 50 },
+      );
 
       return {
         success: true,
         model: response.model,
-        responseLength: response.content.length
+        responseLength: response.content.length,
       };
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
