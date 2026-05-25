@@ -34,7 +34,10 @@ const tenantSchema = new mongoose.Schema({
     },
     currentPeriodEnd: Date,
     stripeCustomerId: String,
-    stripeSubscriptionId: String
+    stripeSubscriptionId: String,
+    razorpayCustomerId: String,
+    razorpaySubscriptionId: String,
+    razorpayOrderId: String
   },
   limits: {
     conversations: { type: Number, default: 100 },

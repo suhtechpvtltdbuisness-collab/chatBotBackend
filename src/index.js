@@ -15,6 +15,7 @@ import chatRoutes from "./routes/chatRoutes.js";
 import kbRoutes from "./routes/kbRoutes.js";
 import tenantRoutes from "./routes/tenantRoutes.js";
 import webhookRoutes from "./routes/webhookRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 import handoffService from "./services/handoff.js";
 
 loadEnv();
@@ -32,6 +33,8 @@ const allowedOrigins = [
   "https://chat-bot-frontend-theta-jade.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:5000",
+  "http://localhost:5001",
   "http://localhost:5173",
   process.env.FRONTEND_URL,
   ...(process.env.CORS_ORIGINS || "")
@@ -75,7 +78,21 @@ app.options("*", cors(corsOptions));
 // SECURITY + PERFORMANCE
 // ===============================
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://*.razorpay.com"],
+        frameSrc: ["'self'", "https://api.razorpay.com", "https://*.razorpay.com"],
+        connectSrc: ["'self'", "https://api.razorpay.com", "https://*.razorpay.com"],
+        imgSrc: ["'self'", "data:", "https://*.razorpay.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      },
+    },
+  })
+);
 app.use(compression());
 
 // ===============================
@@ -151,6 +168,8 @@ app.use("/keys", apiKeyRoutes);
 app.use("/kb", kbRoutes);
 app.use("/chat", chatRoutes);
 app.use("/webhook", webhookRoutes);
+app.use("/payment", paymentRoutes);
+app.use("/api", paymentRoutes);
 
 // ===============================
 // SOCKET EVENTS
