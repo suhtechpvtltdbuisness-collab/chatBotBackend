@@ -33,6 +33,18 @@ router.post('/register', [
       return res.status(400).json({ error: 'User already exists' });
     }
 
+    // Check if tenant name is already taken
+    const slug = tenantName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+
+    const existingTenant = await Tenant.findOne({ slug });
+    if (existingTenant) {
+      return res.status(400).json({ error: 'Tenant name is already taken' });
+    }
+
     // Create tenant
     const tenant = new Tenant({
       name: tenantName,
@@ -71,6 +83,10 @@ router.post('/register', [
 
   } catch (error) {
     console.error('Registration error:', error);
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      return res.status(400).json({ error: `${field.charAt(0).toUpperCase() + field.slice(1)} is already in use` });
+    }
     res.status(500).json({ error: 'Registration failed' });
   }
 });
